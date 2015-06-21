@@ -1,0 +1,77 @@
+---
+title: "Prediction Assignment Writeup"
+author: "Nils Jungenfelt"
+date: "Thursday, June 18, 2015"
+output: html_document
+---
+
+##Getting and cleaning the data
+Below is the code for downloading and cleaning the data used for this assignment. Variables with more than 80% NA values are removed, as well as some irrelevant variables like time stamps.
+The data comes from this research: http://groupware.les.inf.puc-rio.br/har
+
+```{r}
+download.file("http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", "pml-training.csv")
+download.file("http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv", "pml-testing.csv")
+
+train <- read.csv("pml-training.csv", na.strings=c("NA","#DIV/0!",""))
+test <- read.csv("pml-testing.csv", na.strings=c("NA","#DIV/0!",""))
+nonNAs <- colSums(is.na(train)) < 0.8*nrow(train)
+train <- train[, nonNAs]
+test <- test[, nonNAs]
+nonRelevant <- 1:7
+train <- train[, -nonRelevant]
+test <- test[, -nonRelevant]
+```
+
+For the analysis we will need the following packages:
+
+```{r warning=FALSE, message=FALSE}
+library(caret)
+library(rattle)
+library(randomForest)
+library(doParallel)
+```
+
+##Building the machine learning algorithm
+We begin with splitting the data into a train set (80%) and a probe set (20%). Seed is set to 133 for reproducability.
+
+```{r}
+set.seed(133)
+
+split <- createDataPartition(train$classe, p = 0.8, list=FALSE)
+train.train <- train[split,]
+train.probe<- train[-split,]
+```
+
+I use a random forest model to predict the variable "classe" in the train data set, and 8 fold cross-validation to avvoid overfitting. To speed up this computationally heavy process, all available cores are used.
+
+```{r cache=TRUE}
+cl <- makeCluster(detectCores())
+registerDoParallel(cl)
+fitControl <- trainControl(method = "repeatedcv", number = 8, repeats = 4, allowParallel=TRUE)
+model <- train(classe ~ ., data = train.train, method = "rf", trControl = fitControl)
+stopCluster(cl)
+```
+
+##Results
+The final model indicates an out of sample error of 0.57%:
+
+```{r}
+model$finalModel
+```
+
+To test the model I will try to predict the data from the probe set that I created:
+
+```{r}
+pred <- predict(model, newdata = train.probe)
+confusionMatrix(pred,train.probe$classe)
+```
+
+So the accuracy of the model is 99.29% according to my test.
+
+Finally, I will try to predict the outcomes in the test set provided in the assignment:
+
+```{r}
+pred <- predict(model, newdata = test)
+pred
+```
